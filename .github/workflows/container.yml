@@ -1,0 +1,52 @@
+name: Build, test and publish
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          docker build --pull \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            -t "$IMAGE:$GITHUB_SHA" ./src
+      - name: Test non-root user and HTTP response
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker run --rm --entrypoint id "$IMAGE:$GITHUB_SHA" -u)" = "10001"
+          docker run -d --name app-test -p 127.0.0.1:5000:5000 \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/src/app.txt,dst=/data/app.txt,readonly" \
+            "$IMAGE:$GITHUB_SHA"
+          trap 'docker logs app-test; docker rm -f app-test' EXIT
+          curl --fail --silent --show-error --retry 15 \
+            --retry-connrefused --retry-delay 2 \
+            http://127.0.0.1:5000/ -o /tmp/actual.html
+          python3 - <<'PYTEST'
+          from pathlib import Path
+          expected = '<p>' + Path('src/app.txt').read_text() + '</p>'
+          assert Path('/tmp/actual.html').read_text() == expected
+          PYTEST
+      - name: Test HTTPS and certificate
+        run: bash scripts/test-https.sh
+      - name: Login and push
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:$GITHUB_SHA"
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            docker tag "$IMAGE:$GITHUB_SHA" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          fi
