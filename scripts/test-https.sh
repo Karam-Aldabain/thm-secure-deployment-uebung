@@ -13,7 +13,7 @@ trap 'docker logs https-test; docker rm -f https-test' EXIT
 docker exec https-test nginx -t
 docker exec https-test openssl x509 -in /etc/nginx/certs/thm.crt \
   -noout -checkhost thm.de
-curl --fail --silent --show-error --retry 15 --retry-connrefused \
+curl --fail --silent --show-error --retry 15 --retry-all-errors \
   --retry-delay 2 --noproxy '*' --resolve thm.de:8443:127.0.0.1 \
   --cacert https/certs/thm.crt https://thm.de:8443/ -o /tmp/https.txt
 printf 'HTTPS fuer thm.de funktioniert.\n' > /tmp/expected-https.txt

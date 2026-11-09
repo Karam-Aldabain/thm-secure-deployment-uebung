@@ -29,7 +29,7 @@ jobs:
             "$IMAGE:$GITHUB_SHA"
           trap 'docker logs app-test; docker rm -f app-test' EXIT
           curl --fail --silent --show-error --retry 15 \
-            --retry-connrefused --retry-delay 2 \
+            --retry-all-errors --retry-delay 2 \
             http://127.0.0.1:5000/ -o /tmp/actual.html
           python3 - <<'PYTEST'
           from pathlib import Path
